@@ -1,5 +1,7 @@
 
 ```{r}
+# Underlying code without Interventions has been adapted from Vincent Laperriere, Katharina Brugger, Franz Rubel (https://doi.org/10.1016/j.prevetmed.2010.10.013)
+
 library(stats)
 library(graphics)
 library(grDevices)
@@ -120,8 +122,6 @@ rH=bH-mH
 omegaH=100; 
 kappa=1;
 
-# transmission parameters
-
 pM=1.0
 pB=0.125
 
@@ -183,10 +183,6 @@ DH[i+1]=DH[i] + nuH*alphaH*IH[i]
 NH[i+1]=SH[i+1]+EH[i+1]+IH[i+1]+RH[i+1]
 }
 ```
-
-
-
-
 ```{r}
 thetaE1=0.0005; thetaE2=0.0007; thetaE3=0.00095
 
@@ -244,12 +240,6 @@ NH1[i+1]=SH1[i+1]+EH1[i+1]+IH1[i+1]+RH1[i+1]
 }
 ```
 
-
-
-
-
-
-
 ```{r}
 LM2=rep(1, n+1); SM2=rep(500000, n+1); EM2=rep(0, n+1); IM2=rep(100, n+1)
 NMmin=SM2[1]
@@ -304,7 +294,6 @@ s2[i+1]=s2[i] + 0.00005*s2[i]*(1-s2[i])*(-1+40*IH2[i])
 NH2[i+1]=SH2[i+1]+EH2[i+1]+IH2[i+1]+RH2[i+1]
 }
 ```
-
 
 ```{r}
 LM3=rep(1, n+1); SM3=rep(500000, n+1); EM3=rep(0, n+1); IM3=rep(100, n+1)
@@ -361,12 +350,8 @@ NH3[i+1]=SH3[i+1]+EH3[i+1]+IH3[i+1]+RH3[i+1]
 }
 ```
 
-
-
 ```{r}
 Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
-
-# Convert Date column to Date format
 Climate$Date <- dmy(Climate$Date) 
 Temperatur<- as.numeric(Climate$Temperature)
 CasesDB<- as.numeric(Climate$deadB)
@@ -412,13 +397,8 @@ print(emerge_temp)
 
 ```
 
-
-
-
 ```{r}
 Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
-
-# Convert Date column to Date format
 Climate$Date <- dmy(Climate$Date) 
 Temperatur<- as.numeric(Climate$Temperature)
 CasesDB<- as.numeric(Climate$deadB)
@@ -463,14 +443,8 @@ emerge_temp <- ggplot(Climate) +
 print(emerge_temp)
 
 ```
-
-
-
-
 ```{r}
 Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
-
-# Convert Date column to Date format
 Climate$Date <- dmy(Climate$Date) 
 Temperatur<- as.numeric(Climate$Temperature)
 CasesDB<- as.numeric(Climate$deadB)
@@ -516,10 +490,6 @@ print(emerge_temp)
 
 ```
 
-
-
-
-
 ```{r}
 ##### Infected Birds #####
 
@@ -532,16 +502,11 @@ Climate$DeadB      <- as.numeric(Climate$deadB)
 Climate$CasesE     <- as.numeric(Climate$casesE)
 Climate$DeadE      <- as.numeric(Climate$deadE)
 Climate$CasesT     <- as.numeric(Climate$casesT)
-
-# Fix date format
 Climate$Date <- as.Date(Climate$Date, format = "%d/%m/%Y")
 
 IB <- IB 
 
-# Scale model output to match birds
 IBscaling_factor <- max(Climate$casesB, na.rm = TRUE) / max(IB, na.rm = TRUE)
-
-# Add scaled values to the dataframe
 Climate <- Climate %>%
   mutate(IB_scaled = IB*IBscaling_factor)
 
@@ -579,19 +544,8 @@ print(emerge_temp)
 
 ```
 
-
-
-
-
-
-
-
 ```{r}
 print(paste("The relative error for 25% is:", abs(mean((IE-IE1)/IE, na.rm = TRUE)*100)))
 print(paste("The relative error for 50% is:", abs(mean((IE-IE2)/IE, na.rm = TRUE)*100)))
 print(paste("The relative error for 75% is:", abs(mean((IE-IE3)/IE, na.rm = TRUE)*100)))
 ```
-
-
-
-
