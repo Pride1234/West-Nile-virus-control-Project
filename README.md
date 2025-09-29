@@ -5,3 +5,5 @@ Temperature data is downloaded from the CDS and stored as .nc files.
 app.R runs the Shiny app.
 Control_Profile.R runs the Optimal Control model.
 Vaccination_Omega_Humans.R displays the model simulations for the case when there is vaccination of equids and PPE adoption by humans.
+peaks.csv compares the simuated peak to the observed.
+Germany.csv has daily temperature data mainly used for plots.
