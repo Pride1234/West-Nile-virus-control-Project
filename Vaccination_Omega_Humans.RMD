@@ -1,0 +1,597 @@
+
+```{r}
+library(stats)
+library(graphics)
+library(grDevices)
+library(plyr)
+library(ggplot2)
+require(lubridate)
+library(zoo)
+require(fields)
+library(tidyverse)
+library(scales)
+library(ncdf4)
+library(Metrics)
+library(caret)
+
+# Load required libraries
+
+# Define German states and their approximate central coordinates
+german_states <- data.frame(
+  State = c(
+    "Baden-Württemberg", "Bavaria", "Berlin", "Brandenburg", "Bremen",
+    "Hamburg", "Hesse", "Lower Saxony", "Mecklenburg-Western Pomerania",
+    "North Rhine-Westphalia", "Rhineland-Palatinate", "Saarland",
+    "Saxony", "Saxony-Anhalt", "Schleswig-Holstein", "Thuringia"
+  ),
+  Latitude = c(
+    48.6616, 48.7904, 52.5200, 52.4085, 53.0793,
+    53.5511, 50.6521, 52.6367, 53.6127,
+    51.4332, 50.1183, 49.3964,
+    51.1045, 51.9503, 54.2194, 50.9848
+  ),
+  Longitude = c(
+    9.3501, 11.4979, 13.4050, 12.5325, 8.8017,
+    9.9937, 9.1624, 9.8452, 12.4296,
+    7.6616, 7.3090, 6.9447,
+    13.2017, 11.6925, 9.6961, 11.0299
+  )
+)
+
+state_name <- "Berlin"
+state_coords <- german_states[german_states$State == state_name, ]
+
+state_lat <- state_coords$Latitude
+state_lon <- state_coords$Longitude
+
+# Open the NetCDF file
+file_path <- "Daily_Temperature_Celsius.nc" 
+nc_data <- nc_open(file_path)
+lon <- ncvar_get(nc_data, "longitude")
+lat <- ncvar_get(nc_data, "latitude")
+time <- ncvar_get(nc_data, "time")
+t2m_daily <- ncvar_get(nc_data, "t2m_daily")
+time_units <- ncatt_get(nc_data, "time", "units")$value
+time_origin <- sub(".*since ", "", time_units)
+dates <- as.Date(time, origin = time_origin)
+lat_index <- which.min(abs(lat - state_lat))
+lon_index <- which.min(abs(lon - state_lon))
+start_year <- 2018 #
+end_year <- 2024
+selected_dates <- dates[format(dates, "%Y") %in% as.character(start_year:end_year)]
+
+selected_indices <- which(format(dates, "%Y") %in% as.character(start_year:end_year))
+
+T <- t2m_daily[lon_index, lat_index, selected_indices]
+nc_close(nc_data)
+
+#Plot the daily temperature for the chosen state with filtered dates
+plot(
+ selected_dates, T, type = "l",
+ xlab = "Date", ylab = "Temperature (°C)",
+ main = paste("Daily Temperature in", state_name, start_year, "to", end_year)
+)
+
+n=length(T)-1
+t<-seq(0,n)
+
+KM=3300000
+k=rep(0, n); k=0.344/(1+1.231*exp(-0.184*(T-20)))
+bL=rep(0, n); bL=2.325*k; bM=bL/10
+mL=rep(0, n); mL=0.0025*T^2-0.094*T+1.0257; mM=mL/10
+phi=45*pi/180
+day <- c(rep(seq(1,365),2),seq(1,366),rep(seq(1,365),3),seq(1,366),rep(seq(1,365))) 
+epsilon=rep(0, n); epsilon=0.409*sin(2*pi*(day-80)/365)
+D=rep(0, n); D=7.639*asin(tan(epsilon)*tan(phi)+0.0146/(cos(epsilon)*cos(phi)))+12
+dM=rep(0, n); dM=1-1/(1+1775.7*exp(1.559*(D-18.177)))
+
+gammaM=rep(0, n+1)
+for (i in 1:n){if (T[i]>15) gammaM[i]=0.0093*T[i]-0.1352}
+
+# bird parameters
+KB=110000
+phiB=30
+bB=rep(0, n+1)
+bB=dgamma(day, scale=1.4, shape=86.4)
+mB=0.00034
+alphaB=0.4 
+gammaB=1.0 
+nuB=0.7
+
+# equid parameters
+
+phiE=300
+gammaE=0.05 
+alphaE=0.2 
+nuE=0.04
+bE=0.00016
+mE=0.00011
+omegaE=1/365; cE=0.75;thetaE=0;
+
+# human parameters
+
+phiH=0.03
+gammaH=0.25 
+alphaH=0.5
+nuH=0.004
+bH=0.000055
+mH=0.000034
+rH=bH-mH
+omegaH=100; 
+kappa=1;
+
+# transmission parameters
+
+pM=1.0
+pB=0.125
+
+betaM=rep(0, n); betaM=k*pM
+betaB=rep(0, n); betaB=k*pB
+
+LM=rep(1, n+1); SM=rep(500000, n+1); EM=rep(0, n+1); IM=rep(100, n+1)
+NMmin=SM[1]
+NM=SM+EM+IM	
+
+SB=rep(110000, n+1); EB=rep(0, n+1); IB=rep(1, n+1); RB=rep(0, n+1); DB=rep(0, n+1)
+NB=SB+EB+IB+RB
+
+SE=rep(10700, n+1);VE=rep(1, n+1); EE=rep(0, n+1); IE=rep(0, n+1); RE=rep(0, n+1); DE=rep(0, n+1)
+NE=SE+VE+EE+IE+RE
+
+SH=rep(2700000, n+1); s=rep(0.01, n+1); EH=rep(0, n+1); IH=rep(0, n+1); RH=rep(0, n+1); DH=rep(0, n+1)
+NH=SH+EH+IH+RH
+
+s1=rep(0.01, n+1);
+s2=rep(0.01, n+1);
+s3=rep(0.01, n+1);
+for (i in 1:n){
+
+lambdaBM=dM[i]*betaB[i]*IB[i]/KB
+lambdaMB=dM[i]*betaM[i]*phiB*IM[i]/KM
+lambdaME=dM[i]*betaM[i]*phiE*IM[i]/KM
+lambdaMH=dM[i]*betaM[i]*phiH*IM[i]/KM
+
+LM[i+1]=LM[i] + bL[i]*dM[i]*NM[i]*(1-LM[i]/KM)-bM[i]*LM[i]-mL[i]*LM[i]*(1-LM[i]/KM)
+SM[i+1]=SM[i] - lambdaBM*SM[i]+bM[i]*LM[i]-mM[i]*SM[i]
+EM[i+1]=EM[i] + lambdaBM*SM[i]-gammaM[i]*EM[i]-mM[i]*EM[i]
+IM[i+1]=IM[i] + gammaM[i]*EM[i]-mM[i]*IM[i]
+NM[i+1]=SM[i+1]+EM[i+1]+IM[i+1]
+
+if (NM[i+1]<NMmin) {SM[i+1]=SM[i]; EM[i+1]=EM[i]; IM[i+1]=IM[i]}
+if (LM[i+1]<0) {LM[i+1]=0}
+
+SB[i+1]=SB[i] + (bB[i]-(bB[i]-mB)*NB[i]/KB)*NB[i]-lambdaMB*SB[i]-mB*SB[i]
+EB[i+1]=EB[i] + lambdaMB*SB[i]-gammaB*EB[i]-mB*EB[i]
+IB[i+1]=IB[i] + gammaB*EB[i]-alphaB*IB[i]-mB*IB[i]
+RB[i+1]=RB[i] + (1-nuB)*alphaB*IB[i]-mB*RB[i]
+DB[i+1]=DB[i] + nuB*alphaB*IB[i] -DB[i]
+NB[i+1]=SB[i+1]+EB[i+1]+IB[i+1]+RB[i+1]
+
+SE[i+1]=SE[i] + bE*NE[i]-lambdaME*SE[i]-mE*SE[i]-SE[i]*thetaE+omegaE*VE[i]
+VE[i+1]=VE[i] + SE[i]*thetaE-omegaE*VE[i]-mE*VE[i] -cE*lambdaME*VE[i]
+EE[i+1]=EE[i] + lambdaME*SE[i]+cE*lambdaME*VE[i]-gammaE*EE[i]-mE*EE[i]
+IE[i+1]=IE[i] + gammaE*EE[i]-alphaE*IE[i]-mE*IE[i]
+RE[i+1]=RE[i] + (1-nuE)*alphaE*IE[i]-mE*RE[i]
+DE[i+1]=DE[i] + nuE*alphaE*IE[i]
+NE[i+1]=SE[i+1]+VE[i+1]+EE[i+1]+IE[i+1]+RE[i+1]
+
+SH[i+1]=SH[i] + bH*NH[i] - lambdaMH*SH[i] -mH*SH[i]
+EH[i+1]=EH[i] + lambdaMH*SH[i]-gammaH*EH[i]-mH*EH[i]
+IH[i+1]=IH[i] + gammaH*EH[i]-(mH+alphaH)*IH[i]
+RH[i+1]=RH[i] + (1-nuH)*alphaH*IH[i]-mH*RH[i]
+DH[i+1]=DH[i] + nuH*alphaH*IH[i]
+NH[i+1]=SH[i+1]+EH[i+1]+IH[i+1]+RH[i+1]
+}
+```
+
+
+
+
+```{r}
+thetaE1=0.0005; thetaE2=0.0007; thetaE3=0.00095
+
+LM1=rep(1, n+1); SM1=rep(500000, n+1); EM1=rep(0, n+1); IM1=rep(100, n+1)
+NMmin=SM1[1]
+NM1=SM1+EM1+IM1	
+
+SB1=rep(110000, n+1); EB1=rep(0, n+1); IB1=rep(1, n+1); RB1=rep(0, n+1); DB1=rep(0, n+1)
+NB1=SB1+EB1+IB1+RB1
+
+SE1=rep(10700, n+1);VE1=rep(1, n+1); EE1=rep(0, n+1); IE1=rep(0, n+1); RE1=rep(0, n+1); DE1=rep(0, n+1)
+NE1=SE1+VE1+EE1+IE1+RE1
+
+SH1=rep(2700000, n+1); s=rep(0.01, n+1); EH1=rep(0, n+1); IH1=rep(0, n+1); RH1=rep(0, n+1); DH1=rep(0, n+1)
+NH1=SH1+EH1+IH1+RH1
+
+for (i in 1:n){
+
+lambdaBM1=dM[i]*betaB[i]*IB1[i]/KB
+lambdaMB1=dM[i]*betaM[i]*phiB*IM1[i]/KM
+lambdaME1=dM[i]*betaM[i]*phiE*IM1[i]/KM
+lambdaMH1=dM[i]*betaM[i]*phiH*IM1[i]/KM
+
+LM1[i+1]=LM1[i] + bL[i]*dM[i]*NM1[i]*(1-LM1[i]/KM)-bM[i]*LM1[i]-mL[i]*LM1[i]*(1-LM1[i]/KM)
+SM1[i+1]=SM1[i] - lambdaBM1*SM1[i]+bM[i]*LM1[i]-mM[i]*SM1[i]
+EM1[i+1]=EM1[i] + lambdaBM1*SM1[i]-gammaM[i]*EM1[i]-mM[i]*EM1[i]
+IM1[i+1]=IM1[i] + gammaM[i]*EM1[i]-mM[i]*IM1[i]
+NM1[i+1]=SM1[i+1]+EM1[i+1]+IM1[i+1]
+
+if (NM1[i+1]<NMmin) {SM1[i+1]=SM1[i]; EM1[i+1]=EM1[i]; IM1[i+1]=IM1[i]}
+if (LM1[i+1]<0) {LM1[i+1]=0}
+
+SB1[i+1]=SB1[i] + (bB[i]-(bB[i]-mB)*NB1[i]/KB)*NB1[i]-lambdaMB1*SB1[i]-mB*SB1[i]
+EB1[i+1]=EB1[i] + lambdaMB1*SB1[i]-gammaB*EB1[i]-mB*EB1[i]
+IB1[i+1]=IB1[i] + gammaB*EB1[i]-alphaB*IB1[i]-mB*IB1[i]
+RB1[i+1]=RB1[i] + (1-nuB)*alphaB*IB1[i]-mB*RB1[i]
+DB1[i+1]=DB1[i] + nuB*alphaB*IB1[i] - DB1[i]
+NB1[i+1]=SB1[i+1]+EB1[i+1]+IB1[i+1]+RB1[i+1]
+
+SE1[i+1]=SE1[i] + bE*NE1[i]-lambdaME1*SE1[i]-mE*SE1[i]-SE1[i]*thetaE1 + omegaE*VE1[i]
+VE1[i+1]=VE1[i] + SE1[i]*thetaE1-omegaE*VE1[i]-mE*VE1[i] -(1-cE)*lambdaME1*VE1[i]
+EE1[i+1]=EE1[i] + lambdaME1*SE1[i]+(1-cE)*lambdaME1*VE1[i]-gammaE*EE1[i]-mE*EE1[i]
+IE1[i+1]=IE1[i] + gammaE*EE1[i]-alphaE*IE1[i]-mE*IE1[i]
+RE1[i+1]=RE1[i] + (1-nuE)*alphaE*IE1[i]-mE*RE1[i]
+DE1[i+1]=DE1[i] + nuE*alphaE*IE1[i]
+NE1[i+1]=SE1[i+1]+VE1[i+1]+EE1[i+1]+IE1[i+1]+RE1[i+1]
+
+SH1[i+1]=SH1[i] + bH*NH1[i] - (1-s1[i])*lambdaMH1*SH1[i] -mH*SH1[i]
+EH1[i+1]=EH1[i] + (1-s1[i])*lambdaMH1*SH1[i]-gammaH*EH1[i]-mH*EH1[i]
+IH1[i+1]=IH1[i] + gammaH*EH1[i]-(mH+alphaH)*IH1[i]
+RH1[i+1]=RH1[i] + (1-nuH)*alphaH*IH1[i]-mH*RH1[i]
+DH1[i+1]=DH1[i] + nuH*alphaH*IH1[i]
+s1[i+1]=s1[i] + 0.000025*s1[i]*(1-s1[i])*(-1+30*IH1[i])
+NH1[i+1]=SH1[i+1]+EH1[i+1]+IH1[i+1]+RH1[i+1]
+}
+```
+
+
+
+
+
+
+
+```{r}
+LM2=rep(1, n+1); SM2=rep(500000, n+1); EM2=rep(0, n+1); IM2=rep(100, n+1)
+NMmin=SM2[1]
+NM2=SM2+EM2+IM2
+
+SB2=rep(110000, n+1); EB2=rep(0, n+1); IB2=rep(1, n+1); RB2=rep(0, n+1); DB2=rep(0, n+1)
+NB2=SB2+EB2+IB2+RB2
+
+SE2=rep(10700, n+1);VE2=rep(1, n+1); EE2=rep(0, n+1); IE2=rep(0, n+1); RE2=rep(0, n+1); DE2=rep(0, n+1)
+NE2=SE2+VE2+EE2+IE2+RE2
+
+SH2=rep(2700000, n+1); s=rep(0.01, n+1); EH2=rep(0, n+1); IH2=rep(0, n+1); RH2=rep(0, n+1); DH2=rep(0, n+1)
+NH2=SH2+EH2+IH2+RH2
+
+for (i in 1:n){
+
+lambdaBM2=dM[i]*betaB[i]*IB2[i]/KB
+lambdaMB2=dM[i]*betaM[i]*phiB*IM2[i]/KM
+lambdaME2=dM[i]*betaM[i]*phiE*IM2[i]/KM
+lambdaMH2=dM[i]*betaM[i]*phiH*IM2[i]/KM
+
+LM2[i+1]=LM2[i] + bL[i]*dM[i]*NM2[i]*(1-LM2[i]/KM)-bM[i]*LM2[i]-mL[i]*LM2[i]*(1-LM2[i]/KM)
+SM2[i+1]=SM2[i] - lambdaBM2*SM2[i]+bM[i]*LM2[i]-mM[i]*SM2[i]
+EM2[i+1]=EM2[i] + lambdaBM2*SM2[i]-gammaM[i]*EM2[i]-mM[i]*EM2[i]
+IM2[i+1]=IM2[i] + gammaM[i]*EM2[i]-mM[i]*IM2[i]
+NM2[i+1]=SM2[i+1]+EM2[i+1]+IM2[i+1]
+
+if (NM2[i+1]<NMmin) {SM2[i+1]=SM2[i]; EM2[i+1]=EM2[i]; IM2[i+1]=IM2[i]}
+if (LM2[i+1]<0) {LM2[i+1]=0}
+
+SB2[i+1]=SB2[i] + (bB[i]-(bB[i]-mB)*NB2[i]/KB)*NB2[i]-lambdaMB2*SB2[i]-mB*SB2[i]
+EB2[i+1]=EB2[i] + lambdaMB2*SB2[i]-gammaB*EB2[i]-mB*EB2[i]
+IB2[i+1]=IB2[i] + gammaB*EB2[i]-alphaB*IB2[i]-mB*IB2[i]
+RB2[i+1]=RB2[i] + (1-nuB)*alphaB*IB2[i]-mB*RB2[i]
+DB2[i+1]=DB2[i] + nuB*alphaB*IB2[i] -DB2[i]
+NB2[i+1]=SB2[i+1]+EB2[i+1]+IB2[i+1]+RB2[i+1]
+
+SE2[i+1]=SE2[i] + bE*NE2[i]-lambdaME2*SE2[i]-mE*SE2[i]-SE2[i]*thetaE2 +omegaE*VE2[i]
+VE2[i+1]=VE2[i] + SE2[i]*thetaE2-omegaE*VE2[i]-mE*VE2[i] -(1-cE)*lambdaME2*VE2[i]
+EE2[i+1]=EE2[i] + lambdaME2*SE2[i]+(1-cE)*lambdaME1*VE2[i]-gammaE*EE2[i]-mE*EE2[i]
+IE2[i+1]=IE2[i] + gammaE*EE2[i]-alphaE*IE2[i]-mE*IE2[i]
+RE2[i+1]=RE2[i] + (1-nuE)*alphaE*IE2[i]-mE*RE2[i]
+DE2[i+1]=DE2[i] + nuE*alphaE*IE2[i]
+NE2[i+1]=SE2[i+1]+VE2[i+1]+EE2[i+1]+IE2[i+1]+RE2[i+1]
+
+SH2[i+1]=SH2[i] + bH*NH2[i] - (1-s2[i])*lambdaMH2*SH1[i] -mH*SH2[i]
+EH2[i+1]=EH2[i] + (1-s2[i])*lambdaMH2*SH2[i]-gammaH*EH2[i]-mH*EH2[i]
+IH2[i+1]=IH2[i] + gammaH*EH2[i]-(mH+alphaH)*IH2[i]
+RH2[i+1]=RH2[i] + (1-nuH)*alphaH*IH2[i]-mH*RH2[i]
+DH2[i+1]=DH2[i] + nuH*alphaH*IH2[i]
+s2[i+1]=s2[i] + 0.00005*s2[i]*(1-s2[i])*(-1+40*IH2[i]) 
+NH2[i+1]=SH2[i+1]+EH2[i+1]+IH2[i+1]+RH2[i+1]
+}
+```
+
+
+```{r}
+LM3=rep(1, n+1); SM3=rep(500000, n+1); EM3=rep(0, n+1); IM3=rep(100, n+1)
+NMmin=SM3[1]
+NM3=SM3+EM3+IM3
+
+SB3=rep(110000, n+1); EB3=rep(0, n+1); IB3=rep(1, n+1); RB3=rep(0, n+1); DB3=rep(0, n+1)
+NB3=SB3+EB3+IB3+RB3
+
+SE3=rep(10700, n+1);VE3=rep(1, n+1); EE3=rep(0, n+1); IE3=rep(0, n+1); RE3=rep(0, n+1); DE3=rep(0, n+1)
+NE3=SE3+VE3+EE3+IE3+RE3
+
+SH3=rep(2700000, n+1); s=rep(0.01, n+1); EH3=rep(0, n+1); IH3=rep(0, n+1); RH3=rep(0, n+1); DH3=rep(0, n+1)
+NH3=SH3+EH3+IH3+RH3
+
+for (i in 1:n){
+
+lambdaBM3=dM[i]*betaB[i]*IB3[i]/KB
+lambdaMB3=dM[i]*betaM[i]*phiB*IM3[i]/KM
+lambdaME3=dM[i]*betaM[i]*phiE*IM3[i]/KM
+lambdaMH3=dM[i]*betaM[i]*phiH*IM3[i]/KM
+
+LM3[i+1]=LM3[i] + bL[i]*dM[i]*NM3[i]*(1-LM3[i]/KM)-bM[i]*LM3[i]-mL[i]*LM3[i]*(1-LM3[i]/KM)
+SM3[i+1]=SM3[i] - lambdaBM3*SM3[i]+bM[i]*LM3[i]-mM[i]*SM3[i]
+EM3[i+1]=EM3[i] + lambdaBM3*SM3[i]-gammaM[i]*EM3[i]-mM[i]*EM3[i]
+IM3[i+1]=IM3[i] + gammaM[i]*EM3[i]-mM[i]*IM3[i]
+NM3[i+1]=SM3[i+1]+EM3[i+1]+IM3[i+1]
+
+if (NM3[i+1]<NMmin) {SM3[i+1]=SM3[i]; EM3[i+1]=EM3[i]; IM3[i+1]=IM3[i]}
+if (LM3[i+1]<0) {LM3[i+1]=0}
+
+SB3[i+1]=SB3[i] + (bB[i]-(bB[i]-mB)*NB3[i]/KB)*NB3[i]-lambdaMB3*SB3[i]-mB*SB3[i]
+EB3[i+1]=EB3[i] + lambdaMB3*SB3[i]-gammaB*EB3[i]-mB*EB3[i]
+IB3[i+1]=IB3[i] + gammaB*EB3[i]-alphaB*IB3[i]-mB*IB3[i]
+RB3[i+1]=RB3[i] + (1-nuB)*alphaB*IB3[i]-mB*RB3[i]
+DB3[i+1]=DB3[i] + nuB*alphaB*IB3[i] -DB3[i]
+NB3[i+1]=SB3[i+1]+EB3[i+1]+IB3[i+1]+RB3[i+1]
+
+SE3[i+1]=SE3[i] + bE*NE3[i]-lambdaME3*SE3[i]-mE*SE3[i]-SE3[i]*thetaE3 +omegaE*VE3[i]
+VE3[i+1]=VE3[i] + SE3[i]*thetaE3-omegaE*VE3[i]-mE*VE3[i] -(1-cE)*lambdaME3*VE3[i]
+EE3[i+1]=EE3[i] + lambdaME3*SE3[i]+(1-cE)*lambdaME1*VE3[i]-gammaE*EE3[i]-mE*EE3[i]
+IE3[i+1]=IE3[i] + gammaE*EE3[i]-alphaE*IE3[i]-mE*IE3[i]
+RE3[i+1]=RE3[i] + (1-nuE)*alphaE*IE3[i]-mE*RE3[i]
+DE3[i+1]=DE3[i] + nuE*alphaE*IE3[i]
+NE3[i+1]=SE3[i+1]+VE3[i+1]+EE3[i+1]+IE3[i+1]+RE3[i+1]
+
+SH3[i+1]=SH3[i] + bH*NH3[i] - (1-s3[i])*lambdaMH3*SH1[i] -mH*SH3[i]
+EH3[i+1]=EH3[i] + (1-s3[i])*lambdaMH3*SH3[i]-gammaH*EH3[i]-mH*EH3[i]
+IH3[i+1]=IH3[i] + gammaH*EH3[i]-(mH+alphaH)*IH3[i]
+RH3[i+1]=RH3[i] + (1-nuH)*alphaH*IH3[i]-mH*RH3[i]
+DH3[i+1]=DH3[i] + nuH*alphaH*IH3[i]
+s3[i+1]=s3[i] + 0.00005*s3[i]*(1-s3[i])*(-1+60*IH3[i]) 
+NH3[i+1]=SH3[i+1]+EH3[i+1]+IH3[i+1]+RH3[i+1]
+}
+```
+
+
+
+```{r}
+Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
+
+# Convert Date column to Date format
+Climate$Date <- dmy(Climate$Date) 
+Temperatur<- as.numeric(Climate$Temperature)
+CasesDB<- as.numeric(Climate$deadB)
+
+Climate$Date <- as.Date(Climate$Date, format = "%d/%m/%Y")
+
+scaling_factor <- max(Climate$deadB, na.rm = TRUE) / max(DB, na.rm = TRUE) 
+
+Climate <- Climate %>%
+  mutate(DB_scaled = DB*scaling_factor)
+
+emerge_temp <- ggplot(Climate) +
+  geom_line(aes(x = Date, y = IE, color = "No vaccination"), linewidth = 1.5) +
+  geom_line(aes(x = Date, y = IE1, color = "25% vaccination rate"), linewidth = 1.5) +
+  geom_line(aes(x = Date, y = IE2, color = "50% vaccination rate"), linewidth = 1.5) +  
+  geom_line(aes(x = Date, y = IE3, color = "75% vaccination rate"), linewidth = 1.5) +
+  scale_x_date(
+    breaks = date_breaks("5 months"),
+    labels = date_format("%b %y"),
+    limits = as.Date(c('2018-01-01', '2024-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("No vaccination", "25% vaccination rate", "50% vaccination rate", "75% vaccination rate"),
+    values = c("No vaccination" = "blue", "25% vaccination rate" = "red", "50% vaccination rate"="green", "75% vaccination rate"="purple")
+  ) +
+  ylab("Population density") +
+  xlab("") +
+  theme_classic() +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )
+print(emerge_temp)
+
+```
+
+
+
+
+```{r}
+Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
+
+# Convert Date column to Date format
+Climate$Date <- dmy(Climate$Date) 
+Temperatur<- as.numeric(Climate$Temperature)
+CasesDB<- as.numeric(Climate$deadB)
+
+Climate$Date <- as.Date(Climate$Date, format = "%d/%m/%Y")
+
+scaling_factor <- max(Climate$deadB, na.rm = TRUE) / max(DB, na.rm = TRUE) 
+
+Climate <- Climate %>%
+  mutate(DB_scaled = DB*scaling_factor)
+
+emerge_temp <- ggplot(Climate) +
+  geom_line(aes(x = Date, y = VE, color = "No vaccination"), linewidth = 1.5) +
+  geom_line(aes(x = Date, y = VE1, color = "25% vaccination rate"), linewidth = 1.5) +
+  geom_line(aes(x = Date, y = VE2, color = "50% vaccination rate"), linewidth = 1.5) +  
+  geom_line(aes(x = Date, y = VE3, color = "75% vaccination rate"), linewidth = 1.5) +
+  scale_x_date(
+    breaks = date_breaks("5 months"),
+    labels = date_format("%b %y"),
+    limits = as.Date(c('2018-01-01', '2024-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("No vaccination", "25% vaccination rate", "50% vaccination rate", "75% vaccination rate"),
+    values = c("No vaccination" = "blue", "25% vaccination rate" = "red", "50% vaccination rate"="green", "75% vaccination rate"="purple")
+  ) +
+  ylab("Population density") +
+  xlab("") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )
+print(emerge_temp)
+
+```
+
+
+
+
+```{r}
+Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
+
+# Convert Date column to Date format
+Climate$Date <- dmy(Climate$Date) 
+Temperatur<- as.numeric(Climate$Temperature)
+CasesDB<- as.numeric(Climate$deadB)
+
+Climate$Date <- as.Date(Climate$Date, format = "%d/%m/%Y")
+
+scaling_factor <- max(Climate$deadB, na.rm = TRUE) / max(DB, na.rm = TRUE)
+
+Climate <- Climate %>%
+  mutate(DB_scaled = DB*scaling_factor)
+
+emerge_temp <- ggplot(Climate) +
+  geom_line(aes(x = Date, y = IH, color = "No intervention"), linewidth = 1.5) +
+  geom_line(aes(x = Date, y = IH1, color = "ω = 20"), linewidth = 1.5) +
+  geom_line(aes(x = Date, y = IH2, color = "ω = 40"), linewidth = 1.5) +  
+  geom_line(aes(x = Date, y = IH3, color = "ω = 60"), linewidth = 1.5) +
+  scale_x_date(
+    breaks = date_breaks("5 months"),
+    labels = date_format("%b %y"),
+    limits = as.Date(c('2018-01-01', '2024-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("No intervention", "ω = 20", "ω = 40", "ω = 60"),
+    values = c("No intervention" = "blue", "ω = 20" = "red", "ω = 40"="green", "ω = 60"="purple")
+  ) +
+  ylab("Population density") +
+  xlab("") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )
+print(emerge_temp)
+
+```
+
+
+
+
+
+```{r}
+##### Infected Birds #####
+
+# Load data
+Climate <- read.csv("Germany.csv", sep = ',', stringsAsFactors = FALSE)
+
+Climate$Temperatur <- as.numeric(Climate$Temperature)
+Climate$CasesB     <- as.numeric(Climate$casesB)
+Climate$DeadB      <- as.numeric(Climate$deadB)
+Climate$CasesE     <- as.numeric(Climate$casesE)
+Climate$DeadE      <- as.numeric(Climate$deadE)
+Climate$CasesT     <- as.numeric(Climate$casesT)
+
+# Fix date format
+Climate$Date <- as.Date(Climate$Date, format = "%d/%m/%Y")
+
+IB <- IB 
+
+# Scale model output to match birds
+IBscaling_factor <- max(Climate$casesB, na.rm = TRUE) / max(IB, na.rm = TRUE)
+
+# Add scaled values to the dataframe
+Climate <- Climate %>%
+  mutate(IB_scaled = IB*IBscaling_factor)
+
+# Plot
+emerge_temp <- ggplot(Climate) +
+  geom_line(aes(x = Date, y = IB_scaled, color = "Model simulation"), linewidth = 4.5) +
+  geom_line(aes(x = Date, y = casesT, color = "Observed data"), linewidth = 1.5) +
+  scale_x_date(
+    breaks = date_breaks("5 months"),
+    labels = date_format("%b %y"),
+    limits = as.Date(c('2018-01-01', '2024-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("Model simulation", "Observed data", "Temperature (°C)"),
+    values = c("Model simulation" = "green", "Observed data" = "blue", "Temperature (°C)" = "red")
+  ) +
+  ylab("Infectious birds") +
+  xlab("") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )
+
+print(emerge_temp)
+
+```
+
+
+
+
+
+
+
+
+```{r}
+print(paste("The relative error for 25% is:", abs(mean((IE-IE1)/IE, na.rm = TRUE)*100)))
+print(paste("The relative error for 50% is:", abs(mean((IE-IE2)/IE, na.rm = TRUE)*100)))
+print(paste("The relative error for 75% is:", abs(mean((IE-IE3)/IE, na.rm = TRUE)*100)))
+```
+
+
+
+

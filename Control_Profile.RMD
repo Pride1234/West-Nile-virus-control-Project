@@ -1,0 +1,721 @@
+
+```{r}
+library(stats)
+library(graphics)
+library(grDevices)
+library(plyr)
+library(ggplot2)
+require(lubridate)
+library(zoo)
+require(fields)
+library(tidyverse)
+library(scales)
+library(ncdf4)
+```
+
+
+
+
+```{r}
+# Define German states and their approximate central coordinates
+german_states <- data.frame(
+  State = c(
+    "Baden-Württemberg", "Bavaria", "Berlin", "Brandenburg", "Bremen",
+    "Hamburg", "Hesse", "Lower Saxony", "Mecklenburg-Western Pomerania",
+    "North Rhine-Westphalia", "Rhineland-Palatinate", "Saarland",
+    "Saxony", "Saxony-Anhalt", "Schleswig-Holstein", "Thuringia"
+  ),
+  Latitude = c(
+    48.6616, 48.7904, 52.5200, 52.4085, 53.0793,
+    53.5511, 50.6521, 52.6367, 53.6127,
+    51.4332, 50.1183, 49.3964,
+    51.1045, 51.9503, 54.2194, 50.9848
+  ),
+  Longitude = c(
+    9.3501, 11.4979, 13.4050, 12.5325, 8.8017,
+    9.9937, 9.1624, 9.8452, 12.4296,
+    7.6616, 7.3090, 6.9447,
+    13.2017, 11.6925, 9.6961, 11.0299
+  )
+)
+
+# Choose the state to plot
+state_name <- "Berlin"
+state_coords <- german_states[german_states$State == state_name, ]
+
+# Extract latitude and longitude for the chosen state
+state_lat <- state_coords$Latitude
+state_lon <- state_coords$Longitude
+
+# Open the NetCDF file
+file_path <- "Daily_Temperature_Celsius.nc" 
+nc_data <- nc_open(file_path)
+
+# Extract dimensions and data
+lon <- ncvar_get(nc_data, "longitude")
+lat <- ncvar_get(nc_data, "latitude")
+time <- ncvar_get(nc_data, "time")  
+t2m_daily <- ncvar_get(nc_data, "t2m_daily")
+
+# Extract the time units and convert to dates
+time_units <- ncatt_get(nc_data, "time", "units")$value
+time_origin <- sub(".*since ", "", time_units) 
+dates <- as.Date(time, origin = time_origin)
+
+lat_index <- which.min(abs(lat - state_lat))
+lon_index <- which.min(abs(lon - state_lon))
+
+start_year <- 2018 
+end_year <- 2019
+
+# Filter dates for the chosen years
+selected_dates <- dates[format(dates, "%Y") %in% as.character(start_year:end_year)]
+
+# Find indices corresponding to the selected dates
+selected_indices <- which(format(dates, "%Y") %in% as.character(start_year:end_year))
+
+# Extract daily temperature for the chosen state and years
+T <- t2m_daily[lon_index, lat_index, selected_indices]
+
+# Close the NetCDF file for memory
+nc_close(nc_data)
+
+# Plot the daily temperature for the chosen state with filtered dates
+plot(
+ selected_dates, T, type = "l",
+ xlab = "Date", ylab = "Temperature (°C)",
+ main = paste("Daily Temperature in", state_name, start_year, "to", end_year)
+)
+```
+
+
+
+```{r}
+# Underlying code without Interventions has been adapted from Vincent Laperriere, Katharina Brugger, Franz Rubel (https://doi.org/10.1016/j.prevetmed.2010.10.013)
+
+n=length(T)-1
+t<-seq(0,n)
+
+KM=3300000
+k=rep(0, n); k=0.344/(1+1.231*exp(-0.184*(T-20)))
+bL=rep(0, n); bL=2.325*k; bM=bL/10
+mL=rep(0, n); mL=0.0025*T^2-0.094*T+1.0257; mM=mL/10
+phi=45*pi/180
+day <- c(rep(seq(1,365),2),seq(1,366),rep(seq(1,365),3),seq(1,366),rep(seq(1,365))) 
+epsilon=rep(0, n); epsilon=0.409*sin(2*pi*(day-80)/365)
+D=rep(0, n); D=7.639*asin(tan(epsilon)*tan(phi)+0.0146/(cos(epsilon)*cos(phi)))+12
+dM=rep(0, n); dM=1-1/(1+1775.7*exp(1.559*(D-18.177)))
+
+gammaM=rep(0, n+1)
+for (i in 1:n){if (T[i]>15) gammaM[i]=0.0093*T[i]-0.1352}
+
+# bird parameters
+KB=110000
+phiB=30
+bB=rep(0, n+1)
+bB=dgamma(day, scale=1.4, shape=86.4)
+mB=0.00034
+alphaB=0.4 
+gammaB=1.0 
+nuB=0.7
+
+# equid parameters
+
+phiE=300
+gammaE=0.05
+alphaE=0.2
+nuE=0.04
+bE=0.00016
+mE=0.00011
+omegaE=0.0126; 
+cE=0.95;
+thetaE= 0.9; 
+
+# human parameters
+
+phiH=0.03
+gammaH=0.25 
+alphaH=0.5
+nuH=0.004
+bH=0.000055
+mH=0.000034
+rH=bH-mH
+
+omega=100; 
+kappa=0.00001;
+
+# transmission parameters
+
+pM=1.0
+pB=0.125
+
+betaM=rep(0, n); betaM=k*pM
+betaB=rep(0, n); betaB=k*pB
+
+LM1=rep(1, n+1); SM1=rep(500000, n+1); EM1=rep(0, n+1); IM1=rep(100, n+1)
+NMmin1=SM1[1]
+NM1=SM1+EM1+IM1	
+
+SB1=rep(110000, n+1); EB1=rep(0, n+1); IB1=rep(1, n+1); RB1=rep(0, n+1); DB1=rep(0, n+1)
+NB1=SB1+EB1+IB1+RB1
+◘
+SE1=rep(10700, n+1); VE1=rep(0, n+1);EE1=rep(0, n+1); IE1=rep(1, n+1); RE1=rep(0, n+1); DE1=rep(0, n+1)
+NE1=SE1+EE1+IE1+RE1
+
+SH1=rep(2700000, n+1); EH1=rep(0, n+1); IH1=rep(1, n+1); RH1=rep(0, n+1); DH1=rep(0, n+1)
+NH1=SH1+EH1+IH1+RH1
+
+
+for (i in 1:n){
+  lambdaBM1=dM[i]*betaB[i]*IB1[i]/KB
+  lambdaMB1=dM[i]*betaM[i]*phiB*IM1[i]/KM
+  lambdaME1=dM[i]*betaM[i]*phiE*IM1[i]/KM
+  lambdaMH1=dM[i]*betaM[i]*phiH*IM1[i]/KM
+
+  LM1[i+1]=LM1[i] + bL[i]*dM[i]*NM1[i]*(1-LM1[i]/KM)-bM[i]*LM1[i] - mL[i]*LM1[i]*(1-LM1[i]/KM)
+  SM1[i+1]=SM1[i] - lambdaBM1*SM1[i]+bM[i]*LM1[i]-mM[i]*SM1[i]
+  EM1[i+1]=EM1[i] + lambdaBM1*SM1[i]-gammaM[i]*EM1[i]-mM[i]*EM1[i]
+  IM1[i+1]=IM1[i] + gammaM[i]*EM1[i]-mM[i]*IM1[i]
+  NM1[i+1]=SM1[i+1]+EM1[i+1]+IM1[i+1]
+  
+  if (NM1[i+1]<NMmin1) {SM1[i+1]=SM1[i]; EM1[i+1]=EM1[i]; IM1[i+1]=IM1[i]}
+  if (LM1[i+1]<0) {LM1[i+1]=0}
+
+  SB1[i+1]=SB1[i] + (bB[i]-(bB[i]-mB)*NB1[i]/KB)*NB1[i]-lambdaMB1*SB1[i]-mB*SB1[i]
+  EB1[i+1]=EB1[i] + lambdaMB1*SB1[i]-gammaB*EB1[i]-mB*EB1[i]
+  IB1[i+1]=IB1[i] + gammaB*EB1[i]-alphaB*IB1[i]-mB*IB1[i]
+  RB1[i+1]=RB1[i] + (1-nuB)*alphaB*IB1[i]-mB*RB1[i]
+  DB1[i+1]=DB1[i] + nuB*alphaB*IB1[i]
+  NB1[i+1]=SB1[i+1]+EB1[i+1]+IB1[i+1]+RB1[i+1]
+
+  SE1[i+1]=SE1[i] + bE*NE1[i]-lambdaME1*SE1[i]-mE*SE1[i]-thetaE*SE1[i]+omegaE*VE1[i]-mE*VE1[i]
+  VE1[i+1]=VE1[i] + thetaE*SE1[i]-omegaE*VE1[i]-mE*VE1[i] -cE*lambdaME1*VE1[i]
+  EE1[i+1]=EE1[i] + lambdaME1*SE1[i]+cE*lambdaME1*VE1[i]-gammaE*EE1[i]-mE*EE1[i]
+  IE1[i+1]=IE1[i] + gammaE*EE1[i]-alphaE*IE1[i]-mE*IE1[i]
+  RE1[i+1]=RE1[i] + (1-nuE)*alphaE*IE1[i]-mE*RE1[i]
+  DE1[i+1]=DE1[i] + nuE*alphaE*IE1[i]
+  NE1[i+1]=SE1[i+1]+VE1[i+1]+EE1[i+1]+IE1[i+1]+RE1[i+1]
+  
+  SH1[i+1]=SH1[i] + rH*NH1[i]-lambdaMH1*SH1[i]
+  EH1[i+1]=EH1[i] + lambdaMH1*SH1[i]-gammaH*EH1[i]
+  IH1[i+1]=IH1[i] + gammaH*EH1[i]-alphaH*IH1[i]
+  RH1[i+1]=RH1[i] + (1-nuH)*alphaH*IH1[i]
+  DH1[i+1]=DH1[i] + nuH*alphaH*IH1[i]
+  NH1[i+1]=SH1[i+1]+EH1[i+1]+IH1[i+1]+RH1[i+1]
+}
+```
+
+
+
+
+```{r}
+# We initialize the Intervention variables and the adjoints to the state variables ....
+
+lambda1 <- numeric(n+1)
+lambda2 <- numeric(n+1)
+lambda3 <- numeric(n+1)
+lambda4 <- numeric(n+1)
+lambda5 <- numeric(n+1)
+lambda6 <- numeric(n+1)
+lambda7 <- numeric(n+1)
+lambda8 <- numeric(n+1)
+lambda9 <- numeric(n+1)
+lambda10<- numeric(n+1)
+lambda11<- numeric(n+1)
+lambda12<- numeric(n+1)
+lambda13<- numeric(n+1)
+lambda14<- numeric(n+1)
+lambda15<- numeric(n+1)
+lambda16<- numeric(n+1)
+lambda17<- numeric(n+1)
+lambda18<- numeric(n+1)
+lambda19<- numeric(n+1)
+lambda20<- numeric(n+1)
+lambda21<- numeric(n+1)
+  
+u1 <- numeric(n+1)
+u2 <- numeric(n+1)
+u3 <- numeric(n+1)
+```
+
+
+
+
+
+
+```{r}
+LM=rep(1, n+1); SM=rep(500000, n+1); EM=rep(0, n+1); IM=rep(100, n+1)
+NMmin=SM1[1]
+NM=SM+EM+IM	
+
+SB=rep(110000, n+1); EB=rep(0, n+1); IB=rep(1, n+1); RB=rep(0, n+1); DB=rep(0, n+1)
+NB=SB+EB+IB+RB
+
+SE=rep(10700, n+1);VE=rep(0, n+1); EE=rep(0, n+1); IE=rep(1, n+1); RE=rep(0, n+1); DE=rep(0, n+1)
+NE=SE+VE+EE+IE+RE
+
+SH=rep(2700000, n+1); s=rep(0.0001, n+1); EH=rep(0, n+1); IH=rep(1, n+1); RH=rep(0, n+1); DH=rep(0, n+1)
+NH=SH+EH+IH+RH
+
+############################ constants for the Intervention problem ##############################
+e1=.9
+e2=.9
+e3=.9
+A1=A2=10^(-9)
+A3=10^(-9)
+A4=1; A5=0.1
+
+
+c1=1;c2=1;c3=10^6;
+
+h=1
+delta <- 0.01
+test1 <- delta + 1
+test2 <- delta + 1
+test3 <- delta + 1
+
+### Here we solve the system foward in time from t=t_0 to the terminal time t=T
+  
+while (test1 > delta || test2 > delta || test3 > delta) {
+  
+  oldu1 <- u1
+  oldu2 <- u2
+  oldu3 <- u3
+
+for (i in 1:n){
+
+lambdaBM=dM[i]*betaB[i]*IB[i]/KB
+lambdaMB=dM[i]*betaM[i]*phiB*IM[i]/KM
+lambdaME=dM[i]*betaM[i]*phiE*IM[i]/KM
+lambdaMH=dM[i]*betaM[i]*phiH*IM[i]/KM
+
+LM[i+1]=LM[i] + (1- e1*u1[i])*bL[i]*dM[i]*NM[i]*(1-LM[i]/KM)-bM[i]*LM[i]-(mL[i]+ e1*u1[i] + e1*u2[i])*LM[i]*(1-LM[i]/KM)
+SM[i+1]=SM[i] - lambdaBM*SM[i]+bM[i]*LM[i]-(mM[i]+ e3*u3[i])*SM[i]
+EM[i+1]=EM[i] + lambdaBM*SM[i]-gammaM[i]*EM[i]-(mM[i]+ e3*u3[i])*EM[i]
+IM[i+1]=IM[i] + gammaM[i]*EM[i]-(mM[i]+ e3*u3[i])*IM[i]
+NM[i+1]=SM[i+1]+EM[i+1]+IM[i+1]
+
+if (NM[i+1]<NMmin) {SM[i+1]=SM[i]; EM[i+1]=EM[i]; IM[i+1]=IM[i]}
+if (LM[i+1]<0) {LM[i+1]=0}
+
+SB[i+1]=SB[i] + (bB[i]-(bB[i]-mB)*NB[i]/KB)*NB[i]-lambdaMB*SB[i]-mB*SB[i]
+EB[i+1]=EB[i] + lambdaMB*SB[i]-gammaB*EB[i]-mB*EB[i]
+IB[i+1]=IB[i] + gammaB*EB[i]-alphaB*IB[i]-mB*IB[i]
+RB[i+1]=RB[i] + (1-nuB)*alphaB*IB[i]-mB*RB[i]
+DB[i+1]=DB[i] + nuB*alphaB*IB[i]
+NB[i+1]=SB[i+1]+EB[i+1]+IB[i+1]+RB[i+1]
+
+SE[i+1]=SE[i] + bE*NE[i]-lambdaME*SE[i]-(thetaE+mE)*SE[i]+omegaE*VE[i]
+VE[i+1]=VE[i] + thetaE*SE[i]-(omegaE+mE)*VE[i] -(1-cE)*lambdaME*VE[i]
+EE[i+1]=EE[i] + (1-cE)*lambdaME*VE[i]+lambdaME*SE[i]-gammaE*EE[i]-mE*EE[i]
+IE[i+1]=IE[i] + gammaE*EE[i]-alphaE*IE[i]-mE*IE[i]
+RE[i+1]=RE[i] + (1-nuE)*alphaE*IE[i]-mE*RE[i]
+DE[i+1]=DE[i] + nuE*alphaE*IE[i]
+NE[i+1]=SE[i+1]+EE[i+1]+IE[i+1]+RE[i+1]
+
+SH[i+1]=SH[i] + rH*NH[i]-(1-0.75*s[i])*lambdaMH*SH[i]
+EH[i+1]=EH[i] + (1-0.75*s[i])*lambdaMH*SH[i]-gammaH*EH[i]
+IH[i+1]=IH[i] + gammaH*EH[i]-alphaH*IH[i]
+RH[i+1]=RH[i] + (1-nuH)*alphaH*IH[i]
+DH[i+1]=DH[i] + nuH*alphaH*IH[i]
+s[i+1] = s[i] + kappa*s[i]*(1-s[i])*(-1+omega*IB[i])
+NH[i+1]=SH[i+1]+EH[i+1]+IH[i+1]+RH[i+1]
+}
+
+
+for (i in 1:n) {
+ j=n+1-i
+
+m1= (mL[i]+e1*u1[j+1]+e2*u2[j+1])*(1-2*LM[j+1]/KM)*lambda1[j+1]+(1-e1*u1[j+1])*bL[i]*dM[i]*(SM[j+1]+EM[j+1]+IM[j+1])*lambda1[j+1]/KM +(lambda1[j+1]-lambda2[j+1])*bM[i]-A1;
+
+m2 = dM[i]*betaB[i]*IB[j+1]*(lambda2[j+1]-lambda3[j+1])/KB +(mM[i]+e3*u3[j+1])*lambda2[j+1]-(1-e1*u1[j+1])*bL[i]*dM[i]*lambda1[j+1]*(1-LM[j+1]/KM)- A2;
+    
+m3 = (mM[i]+e3*u3[j+1]+gammaM[i])*lambda3[j+1]-(1-e1*u1[j+1])*bL[i]*dM[i]*lambda1[j+1]*(1-LM[j+1]/KM)-gammaM[i]*lambda4[j+1] - A2;
+    
+m4 = (dM[i]*betaM[i]*phiB*SB[j+1]*(lambda5[j+1]-lambda6[j+1]))/KM + ((1-0.75*s[j+1])*dM[i]*betaM[i]*phiH*SH[j+1]*(lambda10[j+1]-lambda11[j+1]))/KM + (dM[i]*betaM[i]*phiE*SE[j+1]*(lambda16[j+1]-lambda18[j+1]))/KM+((1-cE)*dM[i]*betaM[i]*phiE*VE[j+1]*(lambda17[j+1]-lambda18[j+1]))/KM-(1-e1*u1[j+1])*bL[i]*dM[i]*lambda1[j+1]*(1-LM[j+1]/KM)+(mM[i]+e3*u3[j+1])*lambda4[j+1]-A2;
+      
+m5 = (dM[i]*betaM[i]*phiB*IM[j+1]*(lambda5[j+1]-lambda6[j+1]))/KM +mB*lambda5[j+1] - (bB[i]-2*(bB-mB)*(SB[j+1]+EB[j+1]+IB[j+1]+RB[j+1])/KB)*lambda5[j+1];
+    
+m6 = (gammaB+mB)*lambda6[j+1]-gammaB*lambda7[j+1] - (bB[i]-2*(bB[i]-mB)*(SB[j+1]+EB[j+1]+IB[j+1]+RB[j+1])/KB)*lambda5[j+1]-A3;
+    
+m7 = dM[i]*betaB[j+1]*SM[j+1]*(lambda2[j+1]-lambda3[j+1])/KB +(alphaB+mB)*lambda7[j+1] -(1-nuB)*alphaB*lambda8[j+1]-alphaB*nuB*lambda9[j+1]-(bB[i]-2*(bB[i]-mB)*(SB[j+1]+EB[j+1]+IB[j+1]+RB[j+1])/KB)*lambda5[j+1] - kappa*s[j+1]*(1-0.75*s[j+1])*omega*lambda14[j+1]-A3;
+    
+m8 = mB*lambda8[j+1] - (bB[i]-2*(bB[i]-mB)*(SB[j+1]+EB[j+1]+IB[j+1]+RB[j+1])/KB)*lambda5[j+1];
+    
+m9 = 0;
+    
+m10 =((1-0.75*s[j+1])*dM[i]*betaM[i]*phiH*IM[j+1]*(lambda10[j+1]-lambda11[j+1]))/KM-bH*lambda10[j+1]+mH*lambda10[j+1];
+    
+m11 = (gammaH+mH)*lambda11[j+1] -gammaH*lambda12[j+1]-bH*lambda10[j+1]-A4;
+    
+m12 = (alphaH+mH)*lambda12[j+1] -(1-nuH)*alphaH*lambda13[j+1]-nuH*alphaH*lambda15[j+1]-bH*lambda10[j+1]-A4;
+     
+m13 =mH*lambda13[j+1]-bH*lambda10[j+1];
+     
+m14 = (dM[i]*betaM[i]*phiH*IM[j+1]*SH[j+1]*(lambda11[j+1]-lambda10[j+1]))/KM-kappa*(1-2*s[j+1])*(omega*IB[j+1]-1)*lambda14[j+1];
+
+m15=0
+     
+m16 = (dM[i]*betaM[i]*phiE*IM[j+1]*(lambda16[j+1]-lambda18[j+1]))/KM + thetaE*(lambda16[j+1]-lambda17[j+1])+(mE-bE)*lambda16[j+1];
+     
+m17 = (omegaE+mE)*lambda17[j+1]+((1-cE)*dM[i]*betaM[i]*phiE*IM[j+1]*(lambda17[j+1]-lambda18[j+1]))/KM -bE*lambda16[j+1];
+
+m18 = (gammaE+mE)*lambda18[j+1]-gammaE*lambda19[j+1]-bE*lambda16[j+1]-A5;
+     
+m19 = (alphaE+mE)*lambda19[j+1] - (1-nuE)*alphaE*lambda20[j+1]-nuE*alphaE*lambda20[j+1]-bE*lambda16[j+1]-A5;
+
+m20 = mE*lambda20[j+1]-bE*lambda16[j+1];
+       
+m21 = 0;
+  
+lambda1[j] <- lambda1[j+1] - h*m1
+lambda2[j] <- lambda2[j+1] - h*m2
+lambda3[j] <- lambda3[j+1] - h*m3
+lambda4[j] <- lambda4[j+1] - h*m4
+lambda5[j] <- lambda5[j+1] - h*m5
+lambda6[j] <- lambda6[j+1] - h*m6
+lambda7[j] <- lambda7[j+1] - h*m7 
+lambda8[j] <- lambda8[j+1] - h*m8
+lambda9[j] <- lambda9[j+1] - h*m9
+lambda10[j] <- lambda10[j+1] - h*m10
+lambda11[j] <- lambda11[j+1] - h*m11
+lambda12[j] <- lambda12[j+1] - h*m12
+lambda13[j] <- lambda13[j+1] - h*m13
+lambda14[j] <- lambda14[j+1] - h*m14
+lambda15[j] <- lambda15[j+1] - h*m15
+lambda16[j] <- lambda16[j+1] - h*m16
+lambda17[j] <- lambda17[j+1] - h*m17
+lambda18[j] <- lambda18[j+1] - h*m18
+lambda19[j] <- lambda19[j+1] - h*m19
+lambda20[j] <- lambda20[j+1] - h*m20
+lambda21[j] <- lambda21[j+1] - h*m21
+
+}
+
+g1 = (1/c1)*((1-LM[j]/KM)*((bL[j]*dM[j]*(SM[j]+EM[j]+IM[j]))-LM[j]))*lambda1*e1
+
+g2 = (1/c2)*(LM[i]*(1-LM[i]/KM))*lambda1*e2
+
+g3 = (1/c3)*(SM[i]*lambda2 + EM[i]*lambda3 + IM[i]*lambda4)
+
+s1 <- pmax(0, pmin(g1, .1))
+s2 <- pmax(0, pmin(g2, .1))
+s3 <- pmax(0, pmin(g3, .9))
+
+u1 <- 0.7*(s1 + oldu1)
+u2 <- 0.6*(s2 + oldu2)
+u3 <- 0.5*(s3 + oldu3)
+
+test1 <- sum(abs(oldu1 - u1))
+test2 <- sum(abs(oldu2 - u2))
+test3 <- sum(abs(oldu3 - u3))
+}
+```
+
+
+
+
+
+
+
+```{r}
+valid_dates <- seq(as.Date("2018-01-01"), as.Date("2024-12-31"), by = "day")[1:length(t2m_daily[lon_index, lat_index, selected_indices])]
+
+data <- data.frame(Date = valid_dates, T = t2m_daily[lon_index, lat_index, selected_indices])
+
+Plottt <- ggplot(data) +
+    #geom_line(aes(x = Date, y = T, group = 1, color = "Temperature"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IM1, group = 1, color = "Without Intervention"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IM, group = 1, color = "With Intervention"), linewidth = 2.5) +
+    scale_y_continuous(labels = scales::comma_format()) +
+    scale_x_date(
+        breaks = date_breaks("2 month"),  
+        labels = date_format("%b %y"), 
+        limits = as.Date(c('2018-01-01', '2019-12-31'))
+    ) +
+    scale_color_manual(
+        breaks = c("Temperature", "Without Intervention","With Intervention"),
+        values = c("Temperature" = "red", "Without Intervention"="blue", "With Intervention"="red")
+    ) +
+    theme_classic() +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )+
+    ylab("Population density") +
+    ggtitle("")
+
+print(Plottt)
+```
+
+
+
+
+```{r}
+valid_dates <- seq(as.Date("2018-01-01"), as.Date("2024-12-31"), by = "day")[1:length(t2m_daily[lon_index, lat_index, selected_indices])]
+
+data <- data.frame(Date = valid_dates, T = t2m_daily[lon_index, lat_index, selected_indices])
+
+Plottt <- ggplot(data) +
+    #geom_line(aes(x = Date, y = T, group = 1, color = "Temperature"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IB1, group = 1, color = "Without Intervention"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IB, group = 1, color = "With Intervention"), linewidth = 2.5) +
+    scale_y_continuous(labels = scales::comma_format()) +
+    scale_x_date(
+        breaks = date_breaks("2 month"),  
+        labels = date_format("%b %y"), 
+        limits = as.Date(c('2018-01-01', '2019-12-31'))
+    ) +
+    scale_color_manual(
+        breaks = c("Temperature", "Without Intervention","With Intervention"),
+        values = c("Temperature" = "red", "Without Intervention"="blue", "With Intervention"="red")
+    ) +
+    theme_classic() +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )+
+    ylab("Population density") +
+    ggtitle("")
+
+print(Plottt)
+```
+
+
+
+
+
+```{r}
+valid_dates <- seq(as.Date("2018-01-01"), as.Date("2024-12-31"), by = "day")[1:length(t2m_daily[lon_index, lat_index, selected_indices])]
+
+data <- data.frame(Date = valid_dates, T = t2m_daily[lon_index, lat_index, selected_indices])
+
+Plottt <- ggplot(data) +
+    #geom_line(aes(x = Date, y = T, group = 1, color = "Temperature"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IH1, group = 1, color = "Without Intervention"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IH, group = 1, color = "With Intervention"), linewidth = 2.5) +
+    scale_y_continuous(labels = scales::comma_format()) +
+    scale_x_date(
+        breaks = date_breaks("2 month"),  
+        labels = date_format("%b %y"), 
+        limits = as.Date(c('2018-01-01', '2019-12-31'))
+    ) +
+    scale_color_manual(
+        breaks = c("Temperature", "Without Intervention","With Intervention"),
+        values = c("Temperature" = "red", "Without Intervention"="blue", "With Intervention"="red")
+    ) +
+    theme_classic() +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )+
+    ylab("Population density") +
+    ggtitle("")
+
+print(Plottt)
+```
+
+
+
+
+
+```{r}
+valid_dates <- seq(as.Date("2018-01-01"), as.Date("2019-12-31"), by = "day")[1:length(t2m_daily[lon_index, lat_index, selected_indices])]
+
+data <- data.frame(Date = valid_dates, T = t2m_daily[lon_index, lat_index, selected_indices])
+
+Plottt <- ggplot(data) +
+    #geom_line(aes(x = Date, y = T, group = 1, color = "Temperature"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IE1, group = 1, color = "Without Intervention"), linewidth = 2.5) +
+    geom_line(aes(x = Date, y = IE, group = 1, color = "With Intervention"), linewidth = 2.5) +
+    scale_y_continuous(labels = scales::comma_format()) +
+    scale_x_date(
+        breaks = date_breaks("2 month"),
+        labels = date_format("%b %y"),
+        limits = as.Date(c('2018-01-01', '2019-12-31'))
+    ) +
+    scale_color_manual(
+        breaks = c("Temperature", "Without Intervention","With Intervention"),
+        values = c("Temperature" = "red", "Without Intervention"="blue", "With Intervention"="red")
+    ) +
+    theme_classic() +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )+
+    ylab("Population density") +
+    ggtitle("")
+
+print(Plottt)
+
+```
+
+
+
+
+```{r}
+Plottt <- ggplot(data, aes(x = Date)) +  
+  geom_line(aes(y = T/1000, color = "Temperature"), linewidth = 2.5) +
+  geom_line(aes(y = u1, color = "Intervention"), linewidth = 2.5) + 
+  scale_y_continuous(labels = comma_format()) +
+  scale_x_date(
+    breaks = date_breaks("1 months"),  
+    labels = date_format("%b"),  
+    limits = as.Date(c('2018-01-01', '2019-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("Temperature", "Intervention"),
+    values = c("Temperature" = "red", "Intervention" = "blue"), 
+    labels = c("Temperature", expression(u[1]))
+  ) +
+  labs(color = "Legend Title") +  
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )+
+ ylab(expression("Intervention " * u[1]))
+  ggtitle("")  
+
+print(Plottt)
+```
+
+
+
+
+
+
+
+```{r}
+Plottt <- ggplot(data, aes(x = Date)) +  
+  geom_line(aes(y = T/1000, color = "Temperature"), linewidth = 2.5) +
+  geom_line(aes(y = u2, color = "Intervention"), linewidth = 2.5) +  
+  scale_y_continuous(labels = comma_format()) +
+  scale_x_date(
+    breaks = date_breaks("1 months"), 
+    labels = date_format("%b"),   
+    limits = as.Date(c('2018-01-01', '2019-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("Temperature", "Intervention"),
+    values = c("Temperature" = "red", "Intervention" = "blue"),  
+    labels = c("Temperature", expression(u[2])) 
+  ) +
+  labs(color = "Legend Title") + 
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  ) +
+  ylab(expression("Intervention " * u[2]))+
+ 
+  ggtitle("") 
+
+# Print the plot
+print(Plottt)
+```
+
+
+
+
+```{r}
+Plottt <- ggplot(data, aes(x = Date)) +  
+  geom_line(aes(y = T/4000, color = "Temperature"), linewidth = 2.5) +
+  geom_line(aes(y = u3, color = "Intervention"), linewidth = 2.5) +
+  scale_y_continuous(labels = comma_format()) +
+  scale_x_date(
+    breaks = date_breaks("2 months"),  
+    labels = date_format("%b %y"),   
+    limits = as.Date(c('2018-01-01', '2019-12-31'))
+  ) +
+  scale_color_manual(
+    breaks = c("Temperature", "Intervention"),
+    values = c("Temperature" = "red", "Intervention" = "blue"),
+    labels = c("Temperature", expression(u[3]))
+  ) +
+  labs(color = "Legend Title") + 
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 22, face = "bold", color = "black"),
+    legend.key.size = unit(1.5, 'cm'),
+    legend.key.width = unit(1.5, 'cm'),
+    legend.key.height = unit(1.5, 'cm'),
+    axis.text.y = element_text(size = 26, face = "bold", color = "black"),
+    axis.title.y = element_text(size = 20, face = 'bold'),
+    axis.text.x = element_text(size = 16, face = "bold", color = "black"),
+    axis.title.x = element_text(size = 18, face = "bold")
+  )+
+  ylab(expression("Intervention " * u[3]))+
+ 
+  ggtitle("") 
+
+# Print the plot
+print(Plottt)
+```
+
+
+
+```{r}
+print(paste("The RRR for mosquitoes is", abs(mean((IM1-IM)/IM1, na.rm = TRUE)*100)))
+print(paste("The RRR for Birds is", abs(mean((IB1-IB)/IB1, na.rm = TRUE)*100)))
+print(paste("The RRR for Humansis", abs(mean((IH1-IH)/IH1, na.rm = TRUE)*100)))
+print(paste("The RRR for Equids is", abs(mean((IE1-IE)/IE1, na.rm = TRUE)*100)))
+```
+
